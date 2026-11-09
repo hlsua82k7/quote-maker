@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>報價單產生器</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#fff; --text:#1d2329; --muted:#6b7480; --line:#dfe3e8;
+  --accent:#2f5d8a; --accent-soft:#e8eef5; --danger:#c0392b; --warn-bg:#fff5e0; --warn:#8a5a00;
+  --input:#fff; --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15181c; --panel:#1f2328; --text:#e6e9ec; --muted:#9aa3ad; --line:#343a42;
+    --accent:#6fa3d6; --accent-soft:#25313e; --danger:#ff7a6b; --warn-bg:#3a2f16; --warn:#f0c46a; --input:#171a1e;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15181c; --panel:#1f2328; --text:#e6e9ec; --muted:#9aa3ad; --line:#343a42;
+  --accent:#6fa3d6; --accent-soft:#25313e; --danger:#ff7a6b; --warn-bg:#3a2f16; --warn:#f0c46a; --input:#171a1e;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Noto Sans TC","Microsoft JhengHei",sans-serif}
+header{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;margin:0 12px 0 0}
+header .sp{flex:1}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:4px 6px}
+button.ghost:hover{color:var(--danger)}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;padding:16px;max-width:1600px;margin:0 auto}
+.col{min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.card h3{font-size:13px;color:var(--muted);margin:14px 0 8px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.full{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px}
+input,select,textarea{font:inherit;color:var(--text);background:var(--input);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;min-width:0}
+input[type=checkbox],input[type=radio]{width:auto}
+input[type=color]{padding:2px;height:34px;width:48px}
+textarea{resize:vertical;min-height:64px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.req::after{content:" *";color:var(--danger)}
+.items{width:100%;border-collapse:collapse}
+.items th{font-size:12px;color:var(--muted);font-weight:500;text-align:left;padding:4px}
+.items td{padding:3px;vertical-align:top}
+.items td.amt{text-align:right;padding-top:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.items .ops{white-space:nowrap}
+.row-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.imgbox{display:flex;align-items:center;gap:8px}
+.imgbox img{max-height:40px;max-width:100px;border:1px solid var(--line);border-radius:4px;background:#fff}
+.warn{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:13px}
+.warn:empty{display:none}
+.preview-wrap{position:sticky;top:70px}
+.preview-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.stage{overflow:hidden;border-radius:6px}
+.scaler{transform-origin:top left}
+.records{list-style:none;margin:0;padding:0;max-height:300px;overflow:auto}
+.records li{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.records li .info{flex:1;min-width:0}
+.records li .info b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.records li small{color:var(--muted)}
+.muted{color:var(--muted);font-size:12px}
+.tabs{display:none}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);padding:20px;width:min(520px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:8px 16px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none;z-index:99}
+.toast.show{opacity:1}
+
+/* ===== 報價單紙張（永遠白底） ===== */
+#paper{--c:#2f5d8a;width:794px;min-height:1123px;background:#fff;color:#222;padding:44px 52px 36px;font:13px/1.6 "Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;position:relative}
+#paper .p-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:3px solid var(--c);padding-bottom:14px;margin-bottom:18px}
+#paper .p-brand{display:flex;gap:14px;align-items:center}
+#paper .p-brand img{max-height:60px;max-width:160px}
+#paper .p-brand .nm{font-size:18px;font-weight:700}
+#paper .p-brand .sub{font-size:12px;color:#555}
+#paper .p-title{text-align:right}
+#paper .p-title h1{margin:0;font-size:28px;letter-spacing:6px;color:var(--c)}
+#paper .p-title div{font-size:12px;color:#555}
+#paper .p-parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px}
+#paper .p-box{border:1px solid #ddd;border-radius:6px;padding:10px 12px}
+#paper .p-box .lbl{font-size:11px;color:var(--c);font-weight:700;letter-spacing:1px;margin-bottom:4px}
+#paper .p-box .big{font-size:15px;font-weight:700}
+#paper .p-box div{word-break:break-all}
+#paper table.p-items{width:100%;border-collapse:collapse;margin-bottom:14px}
+#paper .p-items th{background:var(--c);color:#fff;font-weight:600;padding:7px 8px;text-align:left;font-size:12px}
+#paper .p-items td{padding:7px 8px;border-bottom:1px solid #e5e5e5;vertical-align:top}
+#paper .p-items tr:nth-child(even) td{background:#fafafa}
+#paper .num{text-align:right!important;font-variant-numeric:tabular-nums;white-space:nowrap}
+#paper .p-items .desc{font-size:11px;color:#777;white-space:pre-wrap}
+#paper .p-sum{display:flex;justify-content:space-between;gap:24px;align-items:flex-start}
+#paper .p-sum .cn{font-size:12px;color:#444;padding-top:6px}
+#paper .p-sum table{border-collapse:collapse;min-width:280px}
+#paper .p-sum td{padding:4px 8px}
+#paper .p-sum tr.total td{border-top:2px solid var(--c);font-size:16px;font-weight:700;color:var(--c);padding-top:8px}
+#paper .p-sum tr.bal td{font-weight:700}
+#paper .p-sec{margin-top:12px}
+#paper .p-sec .lbl{font-weight:700;color:var(--c);font-size:12px;margin-bottom:4px}
+#paper .p-sec .txt{white-space:pre-wrap;font-size:12px;color:#333}
+#paper .p-paid{width:100%;border-collapse:collapse;font-size:12px}
+#paper .p-paid td,#paper .p-paid th{padding:4px 8px;border-bottom:1px solid #eee;text-align:left}
+#paper .p-sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:28px}
+#paper .p-sign .s{border-top:1px solid #999;padding-top:6px;font-size:12px;color:#555;position:relative;min-height:72px}
+#paper .p-sign img{position:absolute;right:10px;bottom:20px;max-height:90px;max-width:140px;opacity:.9}
+#paper .p-foot{position:absolute;left:56px;right:56px;bottom:20px;font-size:10px;color:#aaa;text-align:center}
+/* 簡約樣式 */
+#paper.s-minimal .p-head{border-bottom:1px solid #222}
+#paper.s-minimal .p-title h1{color:#222;font-weight:400;letter-spacing:10px}
+#paper.s-minimal .p-items th{background:none;color:#222;border-bottom:2px solid #222}
+#paper.s-minimal .p-items tr:nth-child(even) td{background:none}
+#paper.s-minimal .p-box{border:none;border-left:3px solid var(--c);border-radius:0}
+/* 色塊樣式 */
+#paper.s-bold{padding-top:0}
+#paper.s-bold .p-head{background:var(--c);color:#fff;margin:0 -52px 18px;padding:30px 52px 18px;border:none}
+#paper.s-bold .p-head .sub,#paper.s-bold .p-title div{color:rgba(255,255,255,.85)}
+#paper.s-bold .p-title h1{color:#fff}
+#paper.s-bold .p-brand img{background:#fff;padding:4px;border-radius:4px}
+
+@media (max-width:980px){
+  main{grid-template-columns:1fr}
+  .tabs{display:flex;gap:4px;padding:8px 16px 0;position:sticky;top:53px;z-index:15;background:var(--bg)}
+  .tabs button{flex:1}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  body[data-tab="edit"] #previewCol{display:none}
+  body[data-tab="preview"] #editCol{display:none}
+  .preview-wrap{position:static}
+}
+@media (max-width:560px){
+  .grid,.grid3{grid-template-columns:1fr}
+  header h1{width:100%}
+  .items thead{display:none}
+  .items tr{display:grid;grid-template-columns:1fr 1fr;gap:4px;border-bottom:1px solid var(--line);padding:6px 0}
+  .items td.wide{grid-column:1/-1}
+}
+@media print{
+  @page{size:A4;margin:0}
+  body{background:#fff}
+  header,.tabs,#editCol,.preview-tools,.warn,dialog,.toast{display:none!important}
+  main{display:block;padding:0}
+  body[data-tab] #previewCol{display:block!important}
+  .preview-wrap,.stage{position:static;overflow:visible}
+  .scaler{transform:none!important;height:auto!important}
+  #paper{width:210mm;min-height:297mm}
+  #paper .p-items tr{break-inside:avoid}
+}
+</style>
+</head>
+<body data-tab="edit">
+<header>
+  <h1>報價單產生器</h1>
+  <button id="btnNew">＋ 新報價單</button>
+  <button id="btnSave" class="primary">儲存</button>
+  <button id="btnRecords">紀錄</button>
+  <span class="sp"></span>
+  <button id="btnTheme" title="切換深淺色">◐</button>
+</header>
+<div class="tabs"><button data-t="edit" class="on">編輯</button><button data-t="preview">預覽 / 匯出</button></div>
+
+<main>
+<section class="col" id="editCol">
+  <div class="card">
+    <h2>報價資訊</h2>
+    <div class="grid3">
+      <label>單據標題<input data-bind="title"></label>
+      <label>報價單號<input data-bind="no"></label>
+      <label>幣別<select data-bind="currency"><option>NT$</option><option>US$</option><option>¥</option><option>HK$</option><option>€</option></select></label>
+      <label>報價日期<input type="date" data-bind="date"></label>
+      <label>有效期限<input type="date" data-bind="valid"></label>
+      <label>專案名稱<input data-bind="project" placeholder="選填"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>客戶資料</h2>
+    <div class="grid">
+      <label><span class="req">客戶名稱</span><input data-bind="client.name"></label>
+      <label>統一編號<input data-bind="client.taxId" inputmode="numeric" maxlength="8"></label>
+      <label>聯絡人<input data-bind="client.contact"></label>
+      <label>電話<input data-bind="client.phone"></label>
+      <label>E-mail<input data-bind="client.email"></label>
+      <label>地址<input data-bind="client.address"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>報價方資料 <span class="muted">（儲存後會記住，下次自動帶入）</span></h2>
+    <div class="grid">
+      <label><span class="req">公司 / 人員</span><input data-bind="issuer.name"></label>
+      <label>統一編號<input data-bind="issuer.taxId" inputmode="numeric" maxlength="8"></label>
+      <label>聯絡人<input data-bind="issuer.contact"></label>
+      <label>電話<input data-bind="issuer.phone"></label>
+      <label>E-mail<input data-bind="issuer.email"></label>
+      <label>地址<input data-bind="issuer.address"></label>
+      <label>LOGO
+        <span class="imgbox"><input type="file" accept="image/*" data-img="issuer.logo"><img id="img_issuer.logo" hidden><button class="ghost" data-clearimg="issuer.logo" type="button">✕</button></span>
+      </label>
+      <label>公司章 / 發票章
+        <span class="imgbox"><input type="file" accept="image/*" data-img="issuer.stamp"><img id="img_issuer.stamp" hidden><button class="ghost" data-clearimg="issuer.stamp" type="button">✕</button></span>
+      </label>
+      <label class="full">匯款資訊<textarea data-bind="issuer.bank" rows="2" placeholder="例：台灣銀行 004 帳號 000-000-000000 戶名 OOO"></textarea></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>服務項目</h2>
+    <table class="items">
+      <thead><tr><th style="width:6%">項次</th><th>項目 / 說明</th><th style="width:13%">單價</th><th style="width:9%">數量</th><th style="width:9%">單位</th><th style="width:11%;text-align:right">金額</th><th style="width:16%">備註</th><th></th></tr></thead>
+      <tbody id="itemsBody"></tbody>
+    </table>
+    <datalist id="units"><option>式</option><option>個</option><option>件</option><option>組</option><option>頁</option><option>小時</option><option>天</option><option>月</option><option>年</option><option>次</option></datalist>
+    <div class="row-actions">
+      <button id="addItem" type="button">＋ 新增項目</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>金額設定</h2>
+    <div class="grid">
+      <label>折扣
+        <select data-bind="discount.type"><option value="none">無</option><option value="amount">固定金額</option><option value="rate">折數（例：9 = 九折，85 = 八五折）</option></select>
+      </label>
+      <label>折扣值<input type="number" step="any" min="0" data-bind="discount.value"></label>
+      <label>稅別
+        <select data-bind="tax.mode">
+          <option value="excl">外加營業稅</option>
+          <option value="incl">內含營業稅（價格已含稅）</option>
+          <option value="none">免稅</option>
+        </select>
+      </label>
+      <label>稅率 %<input type="number" step="any" min="0" data-bind="tax.rate"></label>
+    </div>
+    <h3>已收款明細</h3>
+    <table class="items">
+      <tbody id="paidBody"></tbody>
+    </table>
+    <div class="row-actions"><button id="addPaid" type="button">＋ 新增已收款</button></div>
+  </div>
+
+  <div class="card">
+    <h2>其他資訊</h2>
+    <div class="grid">
+      <label class="full">付款條件<textarea data-bind="terms" rows="2"></textarea></label>
+      <label class="full">備註<textarea data-bind="notes" rows="3"></textarea></label>
+      <label class="inline"><input type="checkbox" data-bind="showSign"> 顯示簽章欄</label>
+      <label class="inline"><input type="checkbox" data-bind="showCn"> 顯示中文大寫金額</label>
+    </div>
+  </div>
+</section>
+
+<section class="col" id="previewCol">
+  <div class="preview-wrap">
+    <div class="card" style="padding:12px">
+      <div class="preview-tools">
+        <label class="inline" style="font-size:13px">樣式
+          <select data-bind="style" style="width:auto"><option value="classic">經典</option><option value="minimal">簡約</option><option value="bold">色塊</option></select>
+        </label>
+        <label class="inline" style="font-size:13px">主色<input type="color" data-bind="color"></label>
+        <span class="sp" style="flex:1"></span>
+        <button id="exPdf" type="button">PDF</button>
+        <button id="exPng" type="button">圖片</button>
+        <button id="exXlsx" type="button">Excel</button>
+      </div>
+      <div class="warn" id="warn"></div>
+      <div class="stage" id="stage"><div class="scaler" id="scaler"><div id="paper"></div></div></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<dialog id="dlgRecords">
+  <h2 style="margin:0 0 12px;font-size:16px">已儲存的報價單</h2>
+  <ul class="records" id="recList"></ul>
+  <div class="row-actions" style="justify-content:space-between">
+    <span>
+      <button id="btnExportJson" type="button">備份匯出</button>
+      <label class="btn" style="display:inline-block;color:var(--text);font-size:14px">匯入備份<input type="file" accept=".json" id="importJson" hidden></label>
+    </span>
+    <button id="closeRec" type="button">關閉</button>
+  </div>
+  <p class="muted" style="margin:12px 0 0">紀錄存在這台電腦的瀏覽器裡；換電腦或清除瀏覽資料前請先「備份匯出」。</p>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ toast('儲存失敗（瀏覽器空間不足或被封鎖）'); return false; } }
+};
+const today = (add=0) => { const d = new Date(); d.setDate(d.getDate()+add); return d.toISOString().slice(0,10); };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const r2 = n => Math.round(n*100)/100;
+const fmt = n => r2(n).toLocaleString('zh-TW', {maximumFractionDigits:2});
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+
+function newNo(){
+  const d = today().replace(/-/g,'');
+  const recs = LS.get('qm.records', []);
+  const n = recs.filter(r => (r.data.no||'').startsWith('Q'+d)).length + 1;
+  return `Q${d}-${String(n).padStart(2,'0')}`;
+}
+function blankState(){
+  return {
+    id: uid(), title:'報價單', no:newNo(), currency:'NT$', date:today(), valid:today(30), project:'',
+    client:{name:'',taxId:'',contact:'',phone:'',email:'',address:''},
+    issuer: Object.assign({name:'',taxId:'',contact:'',phone:'',email:'',address:'',bank:'',logo:'',stamp:''}, LS.get('qm.issuer', {})),
+    items:[{name:'',desc:'',price:'',qty:1,unit:'式',note:''}],
+    discount:{type:'none',value:''}, tax:{mode:'excl',rate:5}, paid:[],
+    terms:'簽約後支付 50% 訂金，完成驗收後支付尾款。', notes:'', showSign:true, showCn:true,
+    style:'classic', color:'#2f5d8a'
+  };
+}
+let S = LS.get('qm.draft', null) || blankState();
+
+const getPath = (o,p) => p.split('.').reduce((a,k) => a?.[k], o);
+const setPath = (o,p,v) => { const ks = p.split('.'); const last = ks.pop(); ks.reduce((a,k) => a[k] ??= {}, o)[last] = v; };
+
+/* ---------- 計算 ---------- */
+function calc(){
+  const lines = S.items.map(it => r2(num(it.price) * num(it.qty)));
+  const subtotal = r2(lines.reduce((a,b) => a+b, 0));
+  let disc = 0, rateTxt = '';
+  const dv = num(S.discount.value);
+  if (S.discount.type === 'amount') disc = Math.min(dv, subtotal);
+  else if (S.discount.type === 'rate' && dv > 0){
+    const r = dv < 10 ? dv/10 : dv/100;
+    if (r < 1){ disc = subtotal * (1 - r); rateTxt = `${dv} 折`; }
+  }
+  disc = Math.round(disc);
+  const after = subtotal - disc;
+  const rate = num(S.tax.rate) / 100;
+  let untaxed = after, tax = 0, total = after;
+  if (S.tax.mode === 'excl'){ tax = Math.round(after * rate); total = after + tax; }
+  else if (S.tax.mode === 'incl'){ untaxed = Math.round(after / (1 + rate)); tax = after - untaxed; }
+  const paid = r2(S.paid.reduce((a,p) => a + num(p.amount), 0));
+  return {lines, subtotal, disc, rateTxt, after, untaxed, tax, total: r2(total), paid, balance: r2(total - paid)};
+}
+
+function cnAmount(n){
+  n = Math.round(n);
+  if (n === 0) return '零元整';
+  if (n < 0) return '負' + cnAmount(-n);
+  const D = '零壹貳參肆伍陸柒捌玖', U = ['','拾','佰','仟'], B = ['','萬','億','兆'];
+  const sec4 = x => { let s = '', z = false; for (let i = 3; i >= 0; i--){ const v = Math.floor(x / 10**i) % 10; if (v){ if (z) s += '零'; s += D[v] + U[i]; z = false; } else if (s) z = true; } return s; };
+  const secs = []; while (n > 0){ secs.push(n % 10000); n = Math.floor(n / 10000); }
+  let out = '', gap = false;
+  for (let i = secs.length - 1; i >= 0; i--){
+    const v = secs[i];
+    if (!v){ if (out) gap = true; continue; }
+    if (out && (gap || v < 1000)) out += '零';
+    out += sec4(v) + B[i]; gap = false;
+  }
+  return '新台幣' + out + '元整';
+}
+
+/* ---------- 編輯區 ---------- */
+function fillForm(){
+  document.querySelectorAll('[data-bind]').forEach(el => {
+    const v = getPath(S, el.dataset.bind);
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v ?? '';
+  });
+  ['issuer.logo','issuer.stamp'].forEach(k => { const img = document.getElementById('img_'+k), v = getPath(S,k); img.hidden = !v; if (v) img.src = v; });
+  renderItems(); renderPaid();
+}
+function renderItems(){
+  const c = calc();
+  $('#itemsBody').innerHTML = S.items.map((it,i) => `
+    <tr data-i="${i}">
+      <td class="amt" style="text-align:center">${i+1}</td>
+      <td class="wide"><input data-f="name" value="${esc(it.name)}" placeholder="項目名稱"><textarea data-f="desc" rows="1" style="min-height:32px;margin-top:4px" placeholder="說明（選填）">${esc(it.desc)}</textarea></td>
+      <td><input data-f="price" type="number" step="any" value="${esc(it.price)}" placeholder="單價"></td>
+      <td><input data-f="qty" type="number" step="any" value="${esc(it.qty)}"></td>
+      <td><input data-f="unit" value="${esc(it.unit)}" list="units"></td>
+      <td class="amt" data-amt>${fmt(c.lines[i])}</td>
+      <td><input data-f="note" value="${esc(it.note)}" placeholder="備註"></td>
+      <td class="ops"><button class="ghost" data-mv="-1" title="上移">↑</button><button class="ghost" data-mv="1" title="下移">↓</button><button class="ghost" data-del title="刪除">✕</button></td>
+    </tr>`).join('');
+}
+function renderPaid(){
+  $('#paidBody').innerHTML = S.paid.length ? S.paid.map((p,i) => `
+    <tr data-p="${i}">
+      <td style="width:30%"><input type="date" data-f="date" value="${esc(p.date)}"></td>
+      <td class="wide"><input data-f="note" value="${esc(p.note)}" placeholder="說明，例：訂金"></td>
+      <td style="width:25%"><input type="number" step="any" data-f="amount" value="${esc(p.amount)}" placeholder="金額"></td>
+      <td class="ops"><button class="ghost" data-delp title="刪除">✕</button></td>
+    </tr>`).join('') : '<tr><td class="muted">尚未新增已收款</td></tr>';
+}
+
+/* ---------- 預覽 ---------- */
+function renderPaper(){
+  const c = calc(), cur = S.currency, I = S.issuer, C = S.client;
+  const money = n => `${cur} ${fmt(n)}`;
+  const line = (lbl,v) => v ? `<div>${lbl}${esc(v)}</div>` : '';
+  const p = $('#paper');
+  p.className = 's-' + S.style;
+  p.style.setProperty('--c', S.color || '#2f5d8a');
+  const rows = S.items.filter(it => it.name || num(it.price)).map((it, n) => {
+    const i = S.items.indexOf(it);
+    return `<tr><td style="text-align:center">${n+1}</td><td><div>${esc(it.name)}</div>${it.desc ? `<div class="desc">${esc(it.desc)}</div>` : ''}</td>
+      <td class="num">${fmt(num(it.price))}</td><td class="num">${fmt(num(it.qty))} ${esc(it.unit)}</td><td class="num">${fmt(c.lines[i])}</td><td class="desc" style="font-size:12px;color:#444">${esc(it.note)}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:#aaa;text-align:center;padding:24px">尚未填寫服務項目</td></tr>';
+  const sumRows = [
+    ['小計', money(c.subtotal)],
+    c.disc ? [`折扣${c.rateTxt ? '（'+c.rateTxt+'）' : ''}`, '− ' + money(c.disc)] : null,
+    S.tax.mode !== 'none' ? ['未稅金額', money(c.untaxed)] : null,
+    S.tax.mode !== 'none' ? [`營業稅 ${num(S.tax.rate)}%${S.tax.mode==='incl'?'（內含）':''}`, money(c.tax)] : ['稅別', '免稅'],
+  ].filter(Boolean).map(([a,b]) => `<tr><td>${a}</td><td class="num">${b}</td></tr>`).join('')
+    + `<tr class="total"><td>總計</td><td class="num">${money(c.total)}</td></tr>`
+    + (S.paid.length ? `<tr><td>已收款</td><td class="num">− ${money(c.paid)}</td></tr><tr class="bal"><td>尚餘應付</td><td class="num">${money(c.balance)}</td></tr>` : '');
+  const paidTbl = S.paid.length ? `<div class="p-sec"><div class="lbl">已收款明細</div><table class="p-paid"><tr><th>日期</th><th>說明</th><th class="num">金額</th></tr>${S.paid.map(x => `<tr><td>${esc(x.date)}</td><td>${esc(x.note)}</td><td class="num">${money(num(x.amount))}</td></tr>`).join('')}</table></div>` : '';
+  p.innerHTML = `
+    <div class="p-head">
+      <div class="p-brand">${I.logo ? `<img src="${I.logo}" alt="">` : ''}<div><div class="nm">${esc(I.name) || '報價方名稱'}</div><div class="sub">${[I.taxId && '統編：'+I.taxId, I.phone && '電話：'+I.phone, I.email && 'E-mail：'+I.email].filter(Boolean).map(esc).join('　')}</div><div class="sub">${esc(I.address)}</div></div></div>
+      <div class="p-title"><h1>${esc(S.title || '報價單')}</h1><div>單號：${esc(S.no)}</div><div>報價日期：${esc(S.date)}</div>${S.valid ? `<div>有效期限：${esc(S.valid)}</div>` : ''}</div>
+    </div>
+    <div class="p-parties">
+      <div class="p-box"><div class="lbl">客戶</div><div class="big">${esc(C.name) || '［客戶名稱］'}</div>${line('統一編號：',C.taxId)}${line('聯絡人：',C.contact)}${line('電話：',C.phone)}${line('E-mail：',C.email)}${line('地址：',C.address)}</div>
+      <div class="p-box"><div class="lbl">報價人員</div><div class="big">${esc(I.contact || I.name) || '—'}</div>${line('電話：',I.phone)}${line('E-mail：',I.email)}${S.project ? line('專案：',S.project) : ''}</div>
+    </div>
+    <table class="p-items"><thead><tr><th style="width:7%;text-align:center">項次</th><th>項目</th><th class="num" style="width:12%">單價</th><th class="num" style="width:11%">數量</th><th class="num" style="width:13%">金額</th><th style="width:18%">備註</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="p-sum"><div class="cn">${S.showCn && cur === 'NT$' ? '總計金額：' + cnAmount(c.total) : ''}</div><table>${sumRows}</table></div>
+    ${paidTbl}
+    ${S.terms ? `<div class="p-sec"><div class="lbl">付款條件</div><div class="txt">${esc(S.terms)}</div></div>` : ''}
+    ${I.bank ? `<div class="p-sec"><div class="lbl">匯款資訊</div><div class="txt">${esc(I.bank)}</div></div>` : ''}
+    ${S.notes ? `<div class="p-sec"><div class="lbl">備註</div><div class="txt">${esc(S.notes)}</div></div>` : ''}
+    ${S.showSign ? `<div class="p-sign"><div class="s">報價方簽章${I.stamp ? `<img src="${I.stamp}" alt="">` : ''}</div><div class="s">客戶確認簽章 / 日期</div></div>` : ''}
+  `;
+  const w = [];
+  if (!C.name) w.push('客戶名稱未填');
+  if (!I.name) w.push('報價方名稱未填');
+  if (S.items.some(it => it.name && it.price === '')) w.push('有項目單價未填');
+  if (C.taxId && !/^\d{8}$/.test(C.taxId)) w.push('客戶統編應為 8 位數字');
+  $('#warn').textContent = w.length ? '提醒：' + w.join('、') : '';
+  fitPaper();
+}
+function fitPaper(){
+  const stage = $('#stage'), sc = $('#scaler'), paper = $('#paper');
+  const k = Math.min(1, stage.clientWidth / 794);
+  sc.style.transform = `scale(${k})`;
+  sc.style.height = (paper.offsetHeight * k) + 'px';
+  sc.style.width = '794px';
+}
+
+/* ---------- 狀態更新 ---------- */
+let draftT;
+function changed(full){
+  if (full) renderItems();
+  else {
+    const c = calc();
+    document.querySelectorAll('#itemsBody tr').forEach((tr,i) => { const td = tr.querySelector('[data-amt]'); if (td) td.textContent = fmt(c.lines[i]); });
+  }
+  renderPaper();
+  clearTimeout(draftT); draftT = setTimeout(() => LS.set('qm.draft', S), 300);
+}
+
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.bind){ setPath(S, t.dataset.bind, t.type === 'checkbox' ? t.checked : t.value); changed(); return; }
+  const tr = t.closest('tr');
+  if (tr?.dataset.i != null && t.dataset.f){ S.items[+tr.dataset.i][t.dataset.f] = t.value; changed(); }
+  if (tr?.dataset.p != null && t.dataset.f){ S.paid[+tr.dataset.p][t.dataset.f] = t.value; changed(); }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.img && t.files[0]){
+    const key = t.dataset.img, f = t.files[0];
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = () => { // 壓縮到最長邊 600px，避免存檔過大
+      const k = Math.min(1, 600 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = img.width*k; cv.height = img.height*k;
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      const data = cv.toDataURL('image/png');
+      setPath(S, key, data); URL.revokeObjectURL(url); t.value = '';
+      const el = document.getElementById('img_'+key); el.src = data; el.hidden = false;
+      changed();
+    };
+    img.src = url;
+  }
+});
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.clearimg){ setPath(S, t.dataset.clearimg, ''); document.getElementById('img_'+t.dataset.clearimg).hidden = true; changed(); return; }
+  const tr = t.closest('tr');
+  if (tr?.dataset.i != null){
+    const i = +tr.dataset.i;
+    if (t.hasAttribute('data-del')){ S.items.splice(i,1); if (!S.items.length) S.items.push({name:'',desc:'',price:'',qty:1,unit:'式',note:''}); changed(true); }
+    if (t.dataset.mv){ const j = i + +t.dataset.mv; if (j >= 0 && j < S.items.length){ [S.items[i],S.items[j]] = [S.items[j],S.items[i]]; changed(true); } }
+  }
+  if (tr?.dataset.p != null && t.hasAttribute('data-delp')){ S.paid.splice(+tr.dataset.p,1); renderPaid(); changed(); }
+});
+$('#addItem').onclick = () => {
+  const last = S.items[S.items.length-1];
+  S.items.push({name:'', desc:'', price:'', qty:1, unit: last?.unit || '式', note:''}); changed(true);
+  document.querySelector('#itemsBody tr:last-child [data-f=name]').focus();
+};
+$('#addPaid').onclick = () => { S.paid.push({date:today(), note:'', amount:''}); renderPaid(); changed(); };
+
+/* ---------- 紀錄 ---------- */
+function saveRecord(){
+  const recs = LS.get('qm.records', []);
+  const rec = {id:S.id, savedAt:new Date().toISOString(), data:JSON.parse(JSON.stringify(S))};
+  const i = recs.findIndex(r => r.id === S.id);
+  if (i >= 0) recs[i] = rec; else recs.unshift(rec);
+  if (LS.set('qm.records', recs)){
+    const {name,taxId,contact,phone,email,address,bank,logo,stamp} = S.issuer;
+    LS.set('qm.issuer', {name,taxId,contact,phone,email,address,bank,logo,stamp});
+    toast('已儲存');
+  }
+}
+function showRecords(){
+  const recs = LS.get('qm.records', []);
+  $('#recList').innerHTML = recs.length ? recs.map(r => {
+    const tot = (() => { const keep = S; S = r.data; const t = calc().total; S = keep; return t; })();
+    return `<li data-id="${r.id}"><div class="info"><b>${esc(r.data.client.name || '（未填客戶）')}</b><small>${esc(r.data.no)}・${esc(r.data.date)}・${esc(r.data.currency)} ${fmt(tot)}</small></div>
+      <button data-act="load">開啟</button><button data-act="dup">複製</button><button class="ghost" data-act="del" title="刪除">✕</button></li>`;
+  }).join('') : '<li class="muted">還沒有儲存的報價單</li>';
+  $('#dlgRecords').showModal();
+}
+$('#recList').addEventListener('click', e => {
+  const b = e.target.closest('button'), li = e.target.closest('li'); if (!b || !li) return;
+  const recs = LS.get('qm.records', []), r = recs.find(x => x.id === li.dataset.id); if (!r) return;
+  if (b.dataset.act === 'load'){ S = JSON.parse(JSON.stringify(r.data)); fillForm(); changed(); $('#dlgRecords').close(); toast('已開啟'); }
+  if (b.dataset.act === 'dup'){ S = Object.assign(JSON.parse(JSON.stringify(r.data)), {id:uid(), no:newNo(), date:today(), valid:today(30), paid:[]}); fillForm(); changed(); $('#dlgRecords').close(); toast('已複製成新報價單（尚未儲存）'); }
+  if (b.dataset.act === 'del' && confirm(`刪除「${r.data.client.name || r.data.no}」？`)){ LS.set('qm.records', recs.filter(x => x.id !== r.id)); showRecords(); }
+});
+$('#btnSave').onclick = saveRecord;
+$('#btnRecords').onclick = showRecords;
+$('#closeRec').onclick = () => $('#dlgRecords').close();
+$('#btnNew').onclick = () => { if (confirm('開一張新的報價單？目前內容若未儲存會被清掉。')){ S = blankState(); fillForm(); changed(); } };
+$('#btnExportJson').onclick = () => download(new Blob([JSON.stringify({records:LS.get('qm.records',[]), issuer:LS.get('qm.issuer',{})}, null, 1)], {type:'application/json'}), `報價單備份_${today()}.json`);
+$('#importJson').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try{
+    const j = JSON.parse(await f.text());
+    const cur = LS.get('qm.records', []), ids = new Set(cur.map(r => r.id));
+    const add = (j.records || []).filter(r => r?.id && r.data && !ids.has(r.id));
+    LS.set('qm.records', cur.concat(add));
+    if (j.issuer && !LS.get('qm.issuer', null)) LS.set('qm.issuer', j.issuer);
+    toast(`匯入 ${add.length} 筆`); showRecords();
+  }catch(err){ toast('檔案格式不正確'); }
+  e.target.value = '';
+};
+
+/* ---------- 匯出 ---------- */
+const fname = ext => `${S.title || '報價單'}_${S.client.name || '客戶'}_${S.no}.${ext}`.replace(/[\\/:*?"<>|]/g,'_');
+function download(blob, name){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+async function snapPaper(){
+  const sc = $('#scaler'), t = sc.style.transform, tab = document.body.dataset.tab;
+  sc.style.transform = 'none'; document.body.dataset.tab = 'preview'; // 窄螢幕時預覽欄被隱藏，先顯示才能截圖
+  try{ return await html2canvas($('#paper'), {scale:2, backgroundColor:'#fff', useCORS:true}); }
+  finally { sc.style.transform = t; document.body.dataset.tab = tab; }
+}
+$('#exPdf').onclick = async () => {
+  if (!window.html2canvas || !window.jspdf) return toast('PDF 元件載入失敗，請確認網路');
+  toast('產生 PDF 中…');
+  const paper = $('#paper');
+  const cv = await snapPaper();
+  // 可換頁的位置：每一列、每個區塊的底部（避免把一列切成兩半）
+  const scl = $('#scaler'), t = scl.style.transform, tab = document.body.dataset.tab;
+  scl.style.transform = 'none'; document.body.dataset.tab = 'preview';
+  const k = cv.width / (paper.offsetWidth || 794);
+  const top = paper.getBoundingClientRect().top;
+  const cuts = [...paper.querySelectorAll('.p-head,.p-parties,thead,tbody tr,.p-sum,.p-sec,.p-paid tr,.p-sign')]
+    .map(el => Math.round((el.getBoundingClientRect().bottom - top) * k)).sort((a,b) => a-b);
+  scl.style.transform = t; document.body.dataset.tab = tab;
+  const pdf = new jspdf.jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+  const pw = 210, pagePx = Math.floor(cv.width * 297 / pw);   // 一頁 A4 對應的畫布高度
+  const margin = Math.round(40 * k);                           // 續頁上方留白
+  const contentEnd = Math.min(cv.height, (cuts.length ? cuts[cuts.length-1] : cv.height) + Math.round(24 * k)); // 實際內容底部，之後只是留白
+  if (contentEnd <= pagePx * 1.25){
+    // 一頁放得下（或超出 25% 以內）→ 單頁，必要時等比縮小
+    const h = Math.max(contentEnd, Math.min(cv.height, pagePx));
+    const s = Math.min(1, pagePx / h), w = cv.width * s;
+    const part = document.createElement('canvas'); part.width = cv.width; part.height = pagePx;
+    const g = part.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, part.width, part.height);
+    g.drawImage(cv, 0, 0, cv.width, h, (cv.width - w) / 2, 0, w, h * s);
+    pdf.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pw, 297);
+    pdf.save(fname('pdf'));
+    return;
+  }
+  let start = 0, first = true;
+  const lastY = cuts.length ? cuts[cuts.length-1] : cv.height;  // 最後一個區塊的底部；之後沒有內容就不再開新頁
+  for (let guard = 0; start < lastY - 4 && guard < 50; guard++){
+    const room = pagePx - (first ? 0 : margin);
+    let end = start + room;
+    if (end >= contentEnd) end = Math.min(cv.height, end);
+    else { const c = cuts.filter(y => y > start + room*0.5 && y <= end).pop(); if (c) end = c; }
+    const h = end - start, off = first ? 0 : margin;
+    const part = document.createElement('canvas'); part.width = cv.width; part.height = pagePx;
+    const g = part.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, part.width, part.height);
+    g.drawImage(cv, 0, start, cv.width, h, 0, off, cv.width, h);
+    if (!first) pdf.addPage();
+    pdf.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pw, 297);
+    start = end; first = false;
+  }
+  pdf.save(fname('pdf'));
+};
+$('#exPng').onclick = async () => {
+  if (!window.html2canvas) return toast('圖片元件載入失敗，請確認網路');
+  const cv = await snapPaper();
+  cv.toBlob(b => download(b, fname('png')));
+};
+$('#exXlsx').onclick = () => {
+  if (!window.XLSX) return toast('Excel 元件載入失敗，請確認網路');
+  const c = calc(), I = S.issuer, C = S.client;
+  const aoa = [
+    [S.title || '報價單'], [],
+    ['報價單號', S.no, '', '報價日期', S.date], ['有效期限', S.valid, '', '專案', S.project], [],
+    ['客戶名稱', C.name, '', '報價方', I.name], ['統一編號', C.taxId, '', '統一編號', I.taxId],
+    ['聯絡人', C.contact, '', '聯絡人', I.contact], ['電話', C.phone, '', '電話', I.phone],
+    ['E-mail', C.email, '', 'E-mail', I.email], ['地址', C.address, '', '地址', I.address], [],
+    ['項次', '項目', '說明', '單價', '數量', '單位', '金額', '備註'],
+    ...S.items.filter(it => it.name || num(it.price)).map((it, n) => [n+1, it.name, it.desc, num(it.price), num(it.qty), it.unit, r2(num(it.price)*num(it.qty)), it.note || '']),
+    [],
+    ['', '', '', '', '', '小計', c.subtotal],
+    ...(c.disc ? [['', '', '', '', '', '折扣', -c.disc]] : []),
+    ...(S.tax.mode !== 'none' ? [['', '', '', '', '', '未稅金額', c.untaxed], ['', '', '', '', '', `營業稅${num(S.tax.rate)}%`, c.tax]] : [['', '', '', '', '', '稅別', '免稅']]),
+    ['', '', '', '', '', '總計', c.total],
+    ...(S.paid.length ? [['', '', '', '', '', '已收款', -c.paid], ['', '', '', '', '', '尚餘應付', c.balance]] : []),
+    [],
+    ...(S.terms ? [['付款條件', S.terms]] : []), ...(I.bank ? [['匯款資訊', I.bank]] : []), ...(S.notes ? [['備註', S.notes]] : []),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:12},{wch:28},{wch:24},{wch:12},{wch:8},{wch:10},{wch:14},{wch:24}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '報價單');
+  XLSX.writeFile(wb, fname('xlsx'));
+};
+
+/* ---------- 其他 ---------- */
+function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 1800); }
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.body.dataset.tab = b.dataset.t;
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  fitPaper();
+});
+$('#btnTheme').onclick = () => {
+  const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  r.dataset.theme = dark ? 'light' : 'dark'; LS.set('qm.theme', r.dataset.theme);
+};
+{ const th = LS.get('qm.theme', null); if (th) document.documentElement.dataset.theme = th; }
+addEventListener('resize', fitPaper);
+addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 's'){ e.preventDefault(); saveRecord(); } });
+
+fillForm(); renderPaper();
+</script>
+</body>
+</html>
